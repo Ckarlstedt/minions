@@ -60,6 +60,44 @@ def test_env_key_beats_omlx(tmp_path: Path) -> None:
     assert settings.api_key == "sk-env"
 
 
+def test_dotenv_parsing(tmp_path: Path) -> None:
+    from minions.config import read_dotenv
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "# comment\n"
+        "MINIONS_MODEL=some-model\n"
+        'MINIONS_BASE_URL="http://x:1/v1"\n'
+        "MINIONS_TEMPERATURE='0.5'\n"
+        "\n"
+        "not a valid line\n",
+        encoding="utf-8",
+    )
+    assert read_dotenv(env_file) == {
+        "MINIONS_MODEL": "some-model",
+        "MINIONS_BASE_URL": "http://x:1/v1",
+        "MINIONS_TEMPERATURE": "0.5",
+    }
+    assert read_dotenv(tmp_path / "missing.env") == {}
+
+
+def test_dotenv_used_when_env_not_supplied(tmp_path: Path, monkeypatch) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("MINIONS_MODEL=from-dotenv\nMINIONS_MAX_STEPS=3\n", encoding="utf-8")
+    monkeypatch.delenv("MINIONS_MODEL", raising=False)
+    monkeypatch.setenv("MINIONS_MAX_STEPS", "7")  # process env must win
+    settings = load_settings(dotenv_path=env_file, omlx_settings_path=NO_OMLX)
+    assert settings.model == "from-dotenv"
+    assert settings.max_steps == 7
+
+
+def test_omlx_settings_path_via_env(tmp_path: Path) -> None:
+    omlx = tmp_path / "custom-omlx.json"
+    omlx.write_text(json.dumps({"auth": {"api_key": "sk-custom"}}), encoding="utf-8")
+    settings = load_settings({"MINIONS_OMLX_SETTINGS_PATH": str(omlx)})
+    assert settings.api_key == "sk-custom"
+
+
 def test_corrupt_omlx_settings_ignored(tmp_path: Path) -> None:
     omlx = tmp_path / "settings.json"
     omlx.write_text("{not json", encoding="utf-8")

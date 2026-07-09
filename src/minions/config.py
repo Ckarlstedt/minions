@@ -2,17 +2,21 @@
 
 Sources, in precedence order:
 
-1. ``MINIONS_*`` environment variables
-2. built-in defaults (tuned for the local omlx server)
+1. ``MINIONS_*`` process environment variables
+2. a ``.env`` file in the current working directory (gitignored;
+   see ``.env.example`` for every supported variable)
+3. built-in defaults (targeting a local OpenAI-compatible server)
 
-The omlx server requires an API key. To keep secrets out of the repository
-and out of shell history, the loader can discover it from omlx's own config
-(``~/.omlx/settings.json``) when ``MINIONS_API_KEY`` is not set. The key is
-never logged and never written anywhere by this package.
+``.env`` was chosen over a bespoke config file (minions.toml etc.): it is the
+ubiquitous convention for exactly this kind of per-checkout, possibly-secret
+configuration, needs no new precedence rules beyond "process env wins", and
+the parser below is ~15 lines — no dependency needed.
 
-A config *file* (e.g. minions.toml) is deliberately deferred: with this few
-knobs, env vars cover real use, and every additional source adds precedence
-rules to explain. Revisit if the surface grows (see .agents/open-questions.md).
+API keys: servers such as omlx require one. To keep secrets out of the
+repository and shell history, the loader can discover the key from omlx's own
+settings file when ``MINIONS_API_KEY`` is not set (path configurable via
+``MINIONS_OMLX_SETTINGS_PATH``). The key is never logged and never written
+anywhere by this package.
 """
 
 from __future__ import annotations
@@ -80,6 +84,30 @@ def _get_float(env: Mapping[str, str], key: str, fallback: float) -> float:
         raise ConfigError(f"{key} must be a number, got {raw!r}") from exc
 
 
+def read_dotenv(path: Path) -> dict[str, str]:
+    """Parse a .env file: KEY=VALUE lines, '#' comments, optional quotes.
+
+    Returns {} on any read failure — a missing .env is the common case.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    values: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]
+        if key:
+            values[key] = value
+    return values
+
+
 def discover_omlx_api_key(settings_path: Path = OMLX_SETTINGS_PATH) -> str | None:
     """Best-effort read of the omlx server's own API key. Returns None on any failure."""
     try:
@@ -95,10 +123,17 @@ def discover_omlx_api_key(settings_path: Path = OMLX_SETTINGS_PATH) -> str | Non
 def load_settings(
     env: Mapping[str, str] | None = None,
     *,
-    omlx_settings_path: Path = OMLX_SETTINGS_PATH,
+    dotenv_path: Path | None = Path(".env"),
+    omlx_settings_path: Path | None = None,
 ) -> Settings:
-    env = os.environ if env is None else env
+    if env is None:
+        dotenv = read_dotenv(dotenv_path) if dotenv_path else {}
+        env = {**dotenv, **os.environ}  # process env wins over .env
     defaults = Settings()
+
+    if omlx_settings_path is None:
+        raw_omlx = env.get("MINIONS_OMLX_SETTINGS_PATH")
+        omlx_settings_path = Path(raw_omlx).expanduser() if raw_omlx else OMLX_SETTINGS_PATH
 
     api_key = env.get("MINIONS_API_KEY")
     api_key_source = "MINIONS_API_KEY env" if api_key else "none"

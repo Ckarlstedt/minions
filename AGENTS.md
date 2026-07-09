@@ -44,13 +44,13 @@ launch independent questions as separate background invocations.
   ADRs, findings, open questions, progress log). Update it as you work:
   decisions get an ADR, discoveries go to `findings/`, progress to
   `progress.md`.
-- Verify before claiming: `pytest` and `ruff check src tests` must pass;
-  `minions doctor` plus one live `investigate` run for changes touching the
-  loop, provider, or prompts.
+- Verify before claiming: `uv run pytest` and `uv run ruff check src tests`
+  must pass; `uv run minions doctor` plus one live `investigate` run for
+  changes touching the loop, provider, or prompts.
 - Invariants that must survive any change:
   - the tool layer stays read-only and shell-free (ADR-005);
   - reports stay schema-validated with verifiable citations (ADR-004);
   - the core stays transport- and provider-agnostic (ADR-002/006);
   - secrets (API keys) never enter the repo, logs, or traces.
-- The venv lives at `.venv/` (Python 3.14.6 via pyenv); use
-  `.venv/bin/python`, not the system `python3` (which is 3.9).
+- The project uses uv: `uv sync` to set up, `uv run <cmd>` to execute —
+  don't call a bare system `python3`.

@@ -21,19 +21,20 @@ Minions do the legwork.
 ## Quickstart
 
 ```bash
-python -m venv .venv && .venv/bin/pip install -e '.[dev]'
+uv sync                     # set up the environment
+cp .env.example .env        # optional: configure server/model/budgets
 
 # check server, key, and environment
-.venv/bin/minions doctor
+uv run minions doctor
 
 # ask a question about any repository
-.venv/bin/minions investigate "Where is retry logic implemented, and is it tested?" --repo ~/code/myproject
+uv run minions investigate "Where is retry logic implemented, and is it tested?" --repo ~/code/myproject
 ```
 
-By default minions talks to a local [omlx](https://omlx.app) server at
-`http://127.0.0.1:8000/v1` running `gpt-oss-20b-MXFP4-Q8`, and auto-discovers
-the omlx API key. Any OpenAI-compatible server works — see
-[DEVELOPMENT.md](DEVELOPMENT.md) for configuration.
+By default minions talks to a local OpenAI-compatible server (e.g.
+[omlx](https://omlx.app)) at `http://127.0.0.1:8000/v1` and auto-discovers
+the omlx API key if one is needed. Any OpenAI-compatible server and model
+work — configure via `.env` (see [DEVELOPMENT.md](DEVELOPMENT.md)).
 
 ## What a report looks like
 

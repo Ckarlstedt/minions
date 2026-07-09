@@ -2,33 +2,36 @@
 
 ## Setup
 
-Requires Python ≥ 3.12 (this machine: pyenv 3.14.6 — note the system default
-`python3` is 3.9 and will not work):
+Requires [uv](https://docs.astral.sh/uv/) and Python ≥ 3.12 (uv will fetch
+one if needed):
 
 ```bash
-~/.pyenv/versions/3.14.6/bin/python -m venv .venv
-.venv/bin/pip install -e '.[dev]'
+uv sync                      # creates .venv, installs deps + dev group
+cp .env.example .env         # optional: local configuration
 ```
 
 ## Everyday commands
 
 ```bash
-.venv/bin/python -m pytest          # test suite (offline; no server needed)
-.venv/bin/ruff check src tests      # lint
-.venv/bin/ruff format src tests     # format
-.venv/bin/minions doctor            # verify server/key/environment
-.venv/bin/minions investigate "…"   # run a real investigation
+uv run pytest                  # test suite (offline; no server needed)
+uv run ruff check src tests    # lint
+uv run ruff format src tests   # format
+uv run minions doctor          # verify server/key/environment
+uv run minions investigate "…" # run a real investigation
 ```
 
 ## Configuration
 
-Everything is env-var based (defaults target the local omlx server):
+Configuration comes from environment variables, with a `.env` file in the
+working directory as fallback (process env wins). Copy `.env.example` to
+`.env` and adjust; defaults target a local omlx server:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `MINIONS_BASE_URL` | `http://127.0.0.1:8000/v1` | OpenAI-compatible endpoint |
 | `MINIONS_MODEL` | `gpt-oss-20b-MXFP4-Q8` | model id as the server advertises it |
-| `MINIONS_API_KEY` | auto-discovered | falls back to `~/.omlx/settings.json` `auth.api_key` |
+| `MINIONS_API_KEY` | auto-discovered | falls back to the omlx settings file's `auth.api_key` |
+| `MINIONS_OMLX_SETTINGS_PATH` | `~/.omlx/settings.json` | where to look for the omlx key |
 | `MINIONS_MAX_STEPS` | `16` | tool-call budget per investigation |
 | `MINIONS_CONTEXT_TOKEN_LIMIT` | `24000` | force-finish before the server's 32k context cap |
 | `MINIONS_MAX_TOOL_OUTPUT_CHARS` | `8000` | per-tool-result truncation |
