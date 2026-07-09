@@ -1,0 +1,191 @@
+"""The minion loop: bounded tool-calling until a report is submitted.
+
+Budget model (ADR-003):
+- `max_steps` counts model calls. One step before the budget runs out the loop
+  injects FORCE_REPORT_MESSAGE; the model then gets up to EXTRA_STEPS calls to
+  produce a valid submit_report before the run is declared failed.
+- The context guard uses exact `prompt_tokens` from the last response (the
+  server reports them), forcing an early finish before the 32k server wall.
+
+Invalid submissions (bad JSON, schema violations) are returned to the model
+as tool results so it can correct itself — a small model's first JSON attempt
+is not always its best.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass
+
+from pydantic import ValidationError
+
+from minions.agent.prompts import (
+    EMPTY_MESSAGE_NUDGE,
+    FORCE_REPORT_MESSAGE,
+    NUDGE_MESSAGE,
+    SYSTEM_PROMPT,
+    task_message,
+)
+from minions.config import Settings
+from minions.providers.base import ChatProvider, Message, ToolCall, ToolSpec, Usage
+from minions.report import SUBMIT_REPORT_PARAMETERS, FlatSubmission, ReportSubmission
+from minions.tools.base import ToolRegistry
+from minions.tools.workspace import Workspace
+from minions.trace import TraceWriter
+
+logger = logging.getLogger(__name__)
+
+EXTRA_STEPS = 2
+MAX_NUDGES = 3
+
+SUBMIT_REPORT_SPEC = ToolSpec(
+    name="submit_report",
+    description=(
+        "Deliver your final investigation report. Call this exactly once, as your last action."
+    ),
+    parameters=SUBMIT_REPORT_PARAMETERS,
+)
+
+
+@dataclass(frozen=True)
+class LoopOutcome:
+    submission: ReportSubmission | None
+    failure_reason: str | None
+    steps: int
+    usage: Usage
+
+
+def run_loop(
+    question: str,
+    workspace: Workspace,
+    provider: ChatProvider,
+    registry: ToolRegistry,
+    settings: Settings,
+    trace: TraceWriter,
+) -> LoopOutcome:
+    messages: list[Message] = [
+        Message(role="system", content=SYSTEM_PROMPT),
+        Message(role="user", content=task_message(question, workspace, settings.max_steps)),
+    ]
+    specs = [*registry.specs, SUBMIT_REPORT_SPEC]
+    trace.event("start", question=question, workspace=str(workspace.root), model=settings.model)
+
+    usage_total = Usage()
+    steps = 0
+    nudges = 0
+    forced = False
+
+    while steps < settings.max_steps + EXTRA_STEPS:
+        result = provider.complete(messages, specs)
+        steps += 1
+        usage_total += result.usage
+        trace.event(
+            "model_response",
+            step=steps,
+            content=result.message.content,
+            reasoning=result.reasoning,
+            tool_calls=[
+                {"name": c.name, "arguments": c.arguments} for c in result.message.tool_calls
+            ],
+            prompt_tokens=result.usage.prompt_tokens,
+            completion_tokens=result.usage.completion_tokens,
+        )
+        messages.append(result.message)
+
+        if result.message.tool_calls:
+            for call in result.message.tool_calls:
+                if call.name == "submit_report":
+                    submission, error = _parse_submission(call)
+                    if submission is not None:
+                        trace.event("report_submitted", step=steps)
+                        return LoopOutcome(submission, None, steps, usage_total)
+                    messages.append(Message(role="tool", content=error, tool_call_id=call.id))
+                    trace.event("invalid_submission", step=steps, error=error)
+                else:
+                    output = _run_tool(call, registry, forced=forced)
+                    messages.append(Message(role="tool", content=output, tool_call_id=call.id))
+                    trace.event("tool_result", step=steps, tool=call.name, output=output)
+        else:
+            # Small models sometimes emit the report JSON as plain text instead
+            # of a tool call. Salvage it: same schema validation, and the
+            # citation verifier still runs on the result — nothing is trusted
+            # more just because it arrived through the wrong channel.
+            salvaged = _salvage_submission(result.message.content or "")
+            if salvaged is not None:
+                trace.event("report_salvaged_from_text", step=steps)
+                return LoopOutcome(salvaged, None, steps, usage_total)
+            nudges += 1
+            if nudges > MAX_NUDGES:
+                return LoopOutcome(
+                    None, "model stopped calling tools and never submitted a report",
+                    steps, usage_total,
+                )
+            empty = not (result.message.content or "").strip()
+            nudge = EMPTY_MESSAGE_NUDGE if empty else NUDGE_MESSAGE
+            messages.append(Message(role="user", content=nudge))
+            trace.event("nudge", step=steps, empty_response=empty)
+
+        out_of_steps = steps >= settings.max_steps - 1
+        out_of_context = result.usage.prompt_tokens > settings.context_token_limit
+        if not forced and (out_of_steps or out_of_context):
+            forced = True
+            messages.append(Message(role="user", content=FORCE_REPORT_MESSAGE))
+            trace.event(
+                "forced_finish",
+                step=steps,
+                reason="context" if out_of_context else "steps",
+            )
+
+    return LoopOutcome(None, "budget exhausted without a valid report", steps, usage_total)
+
+
+def _parse_submission(call: ToolCall) -> tuple[ReportSubmission | None, str | None]:
+    try:
+        raw = json.loads(call.arguments)
+    except ValueError as exc:
+        return None, (
+            f"Error: submit_report arguments were not valid JSON ({exc}). "
+            "Call submit_report again with valid JSON."
+        )
+    try:
+        return FlatSubmission.model_validate(raw).to_submission(), None
+    except ValidationError as exc:
+        problems = "; ".join(
+            f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}" for err in exc.errors()[:5]
+        )
+        return None, (
+            f"Error: report does not match the required schema ({problems}). "
+            "Fix these fields and call submit_report again."
+        )
+
+
+def _salvage_submission(content: str) -> ReportSubmission | None:
+    """Extract a valid report from plain text, e.g. a JSON block the model
+    should have sent as a submit_report call. Returns None if there isn't one."""
+    start = content.find("{")
+    end = content.rfind("}")
+    if start == -1 or end <= start:
+        return None
+    try:
+        raw = json.loads(content[start : end + 1])
+    except ValueError:
+        return None
+    if not isinstance(raw, dict) or "summary" not in raw:
+        return None
+    try:
+        return FlatSubmission.model_validate(raw).to_submission()
+    except ValidationError:
+        return None
+
+
+def _run_tool(call: ToolCall, registry: ToolRegistry, *, forced: bool) -> str:
+    if forced:
+        return "Error: budget exhausted — call submit_report now, no other tools."
+    try:
+        arguments = json.loads(call.arguments) if call.arguments.strip() else {}
+    except ValueError as exc:
+        return f"Error: tool arguments were not valid JSON ({exc}). Retry with valid JSON."
+    if not isinstance(arguments, dict):
+        return "Error: tool arguments must be a JSON object."
+    return registry.run(call.name, arguments)
