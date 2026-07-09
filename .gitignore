@@ -1,2 +1,16 @@
 # misc
 .DS_Store
+.agents/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+
+# local secrets / scratch (never commit keys)
+.env
