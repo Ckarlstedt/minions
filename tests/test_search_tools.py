@@ -29,6 +29,21 @@ def test_glob_filter(plain_ws: Workspace) -> None:
     assert out == "No matches found."
 
 
+def test_glob_braces(git_ws: Workspace) -> None:
+    out = run_search(git_ws, {"pattern": "Demo", "glob": "*.{md,rst}"})
+    assert "README.md" in out
+
+
+def test_glob_matches_root_level_files(git_ws: Workspace) -> None:
+    out = run_search(git_ws, {"pattern": "Demo", "glob": "**/*.md"})
+    assert "README.md" in out  # '**/' must also match zero directories
+
+
+def test_invalid_glob_is_reported(plain_ws: Workspace) -> None:
+    out = run_search(plain_ws, {"pattern": "Demo", "glob": "*.{md"})
+    assert out.startswith("Error:") and "glob" in out
+
+
 def test_path_restriction(plain_ws: Workspace) -> None:
     out = run_search(plain_ws, {"pattern": "line", "path": "src"})
     assert "big.txt" not in out

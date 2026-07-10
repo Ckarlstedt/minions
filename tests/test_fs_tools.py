@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from minions.tools.base import ToolRegistry
-from minions.tools.fs import MAX_READ_LINES, make_list_files, make_read_file
+from minions.tools.fs import MAX_LIST_RESULTS, MAX_READ_LINES, make_list_files, make_read_file
 from minions.tools.workspace import Workspace
 
 
@@ -71,6 +73,32 @@ def test_list_files_subdir(plain_ws: Workspace) -> None:
 def test_list_files_missing_path(plain_ws: Workspace) -> None:
     out = registry_for(plain_ws).run("list_files", {"path": "nope"})
     assert out.startswith("Error: No such path")
+
+
+def test_list_files_brace_glob(plain_ws: Workspace) -> None:
+    out = registry_for(plain_ws).run("list_files", {"glob": "*.{py,md}"})
+    assert "src/app.py" in out and "README.md" in out
+    assert "big.txt" not in out
+
+
+def test_list_files_invalid_glob_is_reported(plain_ws: Workspace) -> None:
+    out = registry_for(plain_ws).run("list_files", {"glob": "broken{a,b"})
+    assert out.startswith("Error:") and "glob" in out
+
+
+def test_list_files_overflow_returns_tree(tmp_path: Path) -> None:
+    root = tmp_path / "many"
+    (root / "pile").mkdir(parents=True)
+    for n in range(MAX_LIST_RESULTS + 1):
+        (root / "pile" / f"f{n:03}.txt").write_text("x", encoding="utf-8")
+    ws = Workspace.discover(root)
+    out = ToolRegistry([make_list_files(ws)], max_output_chars=100_000).run("list_files", {})
+    assert "structure overview" in out
+    assert f"pile/ ({MAX_LIST_RESULTS + 1} files)" in out
+    # The overview is entry-capped, not a full dump of all 301 paths.
+    assert "f300.txt" not in out
+    assert "more entries" in out
+    assert len(out.splitlines()) < 90
 
 
 def test_unknown_tool(plain_ws: Workspace) -> None:

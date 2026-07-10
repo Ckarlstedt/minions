@@ -10,6 +10,12 @@ Budget model (ADR-003):
 Invalid submissions (bad JSON, schema violations) are returned to the model
 as tool results so it can correct itself — a small model's first JSON attempt
 is not always its best.
+
+A tool call byte-identical (after argument canonicalization) to an earlier
+one is not re-run: the repository cannot change mid-run (the tools are
+read-only), so the model gets a short pointer to the earlier result instead
+of a repeated dump — small models loop on the same query when stuck, and
+each repeat burns a step and re-buys the same tokens.
 """
 
 from __future__ import annotations
@@ -75,6 +81,7 @@ def run_loop(
     steps = 0
     nudges = 0
     forced = False
+    seen_calls: dict[tuple[str, str], int] = {}
 
     while steps < settings.max_steps + EXTRA_STEPS:
         result = provider.complete(messages, specs)
@@ -103,7 +110,7 @@ def run_loop(
                     messages.append(Message(role="tool", content=error, tool_call_id=call.id))
                     trace.event("invalid_submission", step=steps, error=error)
                 else:
-                    output = _run_tool(call, registry, forced=forced)
+                    output = _run_tool(call, registry, seen_calls, steps, forced=forced)
                     messages.append(Message(role="tool", content=output, tool_call_id=call.id))
                     trace.event("tool_result", step=steps, tool=call.name, output=output)
         else:
@@ -235,7 +242,14 @@ def _first_json_object(content: str, start: int) -> str | None:
     return None
 
 
-def _run_tool(call: ToolCall, registry: ToolRegistry, *, forced: bool) -> str:
+def _run_tool(
+    call: ToolCall,
+    registry: ToolRegistry,
+    seen_calls: dict[tuple[str, str], int],
+    step: int,
+    *,
+    forced: bool,
+) -> str:
     if forced:
         return "Error: budget exhausted — call submit_report now, no other tools."
     try:
@@ -244,4 +258,13 @@ def _run_tool(call: ToolCall, registry: ToolRegistry, *, forced: bool) -> str:
         return f"Error: tool arguments were not valid JSON ({exc}). Retry with valid JSON."
     if not isinstance(arguments, dict):
         return "Error: tool arguments must be a JSON object."
+    key = (call.name, json.dumps(arguments, sort_keys=True))
+    first_step = seen_calls.get(key)
+    if first_step is not None:
+        return (
+            f"Duplicate call: you already ran this exact {call.name} call at step "
+            f"{first_step}, and the repository has not changed — the result would be "
+            "identical. Vary the arguments, try a different tool, or call submit_report."
+        )
+    seen_calls[key] = step
     return registry.run(call.name, arguments)

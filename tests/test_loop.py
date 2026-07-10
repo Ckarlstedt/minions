@@ -154,6 +154,38 @@ def test_empty_response_gets_specific_nudge(plain_ws: Workspace) -> None:
     assert any(m.content == EMPTY_MESSAGE_NUDGE for m in second_request_messages)
 
 
+def test_duplicate_tool_call_is_not_rerun(plain_ws: Workspace) -> None:
+    provider = FakeProvider(
+        [
+            tool_call("search", {"pattern": "load_config"}),
+            tool_call("search", {"pattern": "load_config"}, call_id="c2"),
+            tool_call("submit_report", VALID_REPORT_ARGS, call_id="c3"),
+        ]
+    )
+    outcome = run(provider, plain_ws)
+    assert outcome.submission is not None
+    third_request_messages = provider.requests[2][0]
+    tool_messages = [m.content or "" for m in third_request_messages if m.role == "tool"]
+    assert any("Duplicate call" in m for m in tool_messages)
+    # The real result was delivered exactly once, at the first call.
+    assert sum("src/app.py:5:" in m for m in tool_messages) == 1
+
+
+def test_duplicate_detection_ignores_argument_order(plain_ws: Workspace) -> None:
+    provider = FakeProvider(
+        [
+            tool_call("search", '{"pattern": "load_config", "path": "src"}'),
+            tool_call("search", '{"path": "src", "pattern": "load_config"}', call_id="c2"),
+            tool_call("submit_report", VALID_REPORT_ARGS, call_id="c3"),
+        ]
+    )
+    outcome = run(provider, plain_ws)
+    assert outcome.submission is not None
+    third_request_messages = provider.requests[2][0]
+    tool_messages = [m.content or "" for m in third_request_messages if m.role == "tool"]
+    assert any("Duplicate call" in m for m in tool_messages)
+
+
 def test_budget_forces_report_request(plain_ws: Workspace) -> None:
     settings = dataclasses.replace(SETTINGS, max_steps=2)
     provider = FakeProvider(

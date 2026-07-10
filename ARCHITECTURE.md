@@ -41,7 +41,9 @@ agent loop  tool layer   provider       verifier
   (ADR-005): in-process implementations, no shell, `Workspace.resolve()`
   containment on every path, git invoked with fixed argv and validated refs.
   The roster is deliberately small — small models pick tools better from
-  short menus.
+  short menus. Globs use gitignore/ripgrep semantics (braces, `**`,
+  name-anywhere) because that is what models emit (ADR-008); oversized
+  listings collapse to a depth-limited tree with file counts.
 - **Provider layer** (`providers/`): a `ChatProvider` protocol with neutral
   message/usage types (ADR-006). The single OpenAI-compatible adapter covers
   omlx, vLLM, Ollama, LM Studio and OpenAI. Tests use a scripted
@@ -59,8 +61,10 @@ agent loop  tool layer   provider       verifier
 
 1. CLI parses args, loads `Settings` (env → defaults; omlx key auto-discovery).
 2. Service resolves the `Workspace`, builds the tool registry, opens a trace.
-3. Loop: system prompt + task message (question, budget, shallow file listing
-   for orientation) → model ↔ tools until `submit_report`.
+3. Loop: system prompt + task message (question, budget, a structure tree and
+   the head of README/AGENTS docs for orientation — ADR-008) → model ↔ tools
+   until `submit_report`; byte-identical repeat calls are answered with a
+   pointer instead of being re-run.
 4. Submission is Pydantic-validated into a `ReportSubmission`.
 5. Verifier stamps each `Evidence.verified` and the aggregate rate.
 6. Report renders as compact markdown (default) or full JSON (`--json`).

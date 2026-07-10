@@ -2,6 +2,26 @@
 
 Newest first. One entry per meaningful step; keep entries short and factual.
 
+## 2026-07-10 — Tool ergonomics from live-trace evidence (ADR-008)
+
+- A live run against an external repo (trace `20260710T134018`) showed the
+  tool layer inducing waste: fnmatch silently mis-reading ripgrep-style
+  globs (`*.{ts,js}` → false "No matches"), 4/15 steps spent on identical
+  repeated searches, two 300-path `list_files` floods, and a blind start.
+- Fixes, all within ADR-005: gitignore-style glob matcher
+  (`tools/globmatch.py` — braces, segment-scoped `*`, zero-dir `**/`,
+  explicit errors on malformed patterns), depth-limited tree rendering with
+  per-dir counts (`tools/tree.py`) used for the orientation listing and
+  oversized `list_files` results, README/AGENTS/CLAUDE doc heads injected
+  into the task message (capped 4k chars), and loop-level duplicate-call
+  suppression. Details: decisions/ADR-008.
+- 157 offline tests green; ruff + ty clean. Live smoke on this repo
+  (gpt-oss): run 1 failed on trailing empty-response turns (known variance,
+  see open-questions), run 2 complete with an accurate answer naming
+  globmatch/validate_glob and the brace tests — citations 0% verified due to
+  the known gpt-oss excerpt-quality issue (`\n…` in excerpts), not the new
+  code.
+
 ## 2026-07-10 — Tool framing, `minions model`, init creates global config
 
 - README rewritten tool-first: install → `minions init` in your project →

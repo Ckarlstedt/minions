@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-import fnmatch
-
 from minions.tools.base import Tool, ToolError, require_int
+from minions.tools.globmatch import glob_match, validate_glob
+from minions.tools.tree import render_tree
 from minions.tools.workspace import Workspace
 
 MAX_LIST_RESULTS = 300
+TREE_MAX_DEPTH = 3
+TREE_MAX_ENTRIES = 80
 MAX_READ_LINES = 250
 MAX_LINE_CHARS = 400
 
@@ -17,28 +19,34 @@ def make_list_files(workspace: Workspace) -> Tool:
         base = workspace.resolve(path or ".")
         if not base.exists():
             raise ToolError(f"No such path: {path}")
+        if glob:
+            validate_glob(glob)
         rels = []
         for file in workspace.iter_files():
             rel = workspace.relative(file)
             if base != workspace.root and not file.is_relative_to(base):
                 continue
-            if glob and not fnmatch.fnmatch(rel, glob):
+            if glob and not glob_match(glob, rel):
                 continue
             rels.append(rel)
         rels.sort()
         if not rels:
             return "No files found."
-        shown = rels[:MAX_LIST_RESULTS]
-        header = f"{len(rels)} files"
-        if len(rels) > len(shown):
-            header += f" (showing first {len(shown)})"
-        return header + "\n" + "\n".join(shown)
+        if len(rels) > MAX_LIST_RESULTS:
+            return (
+                f"{len(rels)} files — too many to list; structure overview instead "
+                "(file counts in parentheses):\n"
+                + render_tree(rels, max_depth=TREE_MAX_DEPTH, max_entries=TREE_MAX_ENTRIES)
+                + "\nNarrow with path or glob to see exact file paths."
+            )
+        return f"{len(rels)} files\n" + "\n".join(rels)
 
     return Tool(
         name="list_files",
         description=(
             "List files in the repository (recursively), optionally under a subdirectory "
-            "and/or filtered by a glob pattern such as 'src/**/*.py'."
+            "and/or filtered by a glob such as 'src/**/*.py' or '*.{ts,tsx}'. "
+            "Very large results come back as a directory overview with file counts."
         ),
         parameters={
             "type": "object",
@@ -47,7 +55,14 @@ def make_list_files(workspace: Workspace) -> Tool:
                     "type": "string",
                     "description": "Subdirectory to list (default: repo root)",
                 },
-                "glob": {"type": "string", "description": "Optional glob filter, e.g. '**/*.toml'"},
+                "glob": {
+                    "type": "string",
+                    "description": (
+                        "Optional glob filter, e.g. '**/*.toml' or '*.{py,md}'. "
+                        "'*' stays within one directory level; a pattern without '/' "
+                        "matches file names at any depth."
+                    ),
+                },
             },
         },
         handler=list_files,

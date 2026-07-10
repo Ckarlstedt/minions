@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import fnmatch
 import re
 import subprocess
 
 from minions.tools.base import Tool, ToolError, require_int
+from minions.tools.globmatch import glob_match, validate_glob
 from minions.tools.workspace import Workspace
 
 MAX_RESULTS_CAP = 100
@@ -21,6 +21,8 @@ def make_search(workspace: Workspace) -> Tool:
         base = workspace.resolve(path or ".")
         if not base.exists():
             raise ToolError(f"No such path: {path}")
+        if glob:
+            validate_glob(glob)
 
         matches = (
             _git_grep(workspace, pattern, base)
@@ -28,7 +30,7 @@ def make_search(workspace: Workspace) -> Tool:
             else _python_grep(workspace, pattern, base)
         )
         if glob:
-            matches = [m for m in matches if fnmatch.fnmatch(m[0], glob)]
+            matches = [m for m in matches if glob_match(glob, m[0])]
         if not matches:
             return "No matches found."
 
@@ -52,7 +54,13 @@ def make_search(workspace: Workspace) -> Tool:
             "properties": {
                 "pattern": {"type": "string", "description": "Regex to search for"},
                 "path": {"type": "string", "description": "Restrict to this subdirectory"},
-                "glob": {"type": "string", "description": "Restrict to paths matching this glob"},
+                "glob": {
+                    "type": "string",
+                    "description": (
+                        "Restrict to paths matching this glob, e.g. '**/*.py' or "
+                        "'*.{ts,tsx}'. A pattern without '/' matches file names at any depth."
+                    ),
+                },
                 "max_results": {
                     "type": "integer",
                     "description": "Max matches to return (default 50)",
