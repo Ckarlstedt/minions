@@ -79,10 +79,10 @@ where a coding agent (Claude Code, Codex, Cursor, …) does work for you.
 and a running local model server):
 
 ```bash
-# from a local clone
+# straight from git
+uv tool install git+https://github.com/Ckarlstedt/minions
+# or from a local clone
 uv tool install /path/to/minions
-# or straight from git
-uv tool install git+https://github.com/OWNER/minions
 ```
 
 **2. Check the plumbing:**

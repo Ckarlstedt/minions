@@ -2,6 +2,16 @@
 
 Newest first. One entry per meaningful step; keep entries short and factual.
 
+## 2026-07-10 — Published
+
+- Repo published: https://github.com/Ckarlstedt/minions (public, GPL-3.0).
+  Local history rebased onto GitHub's initial LICENSE commit; pyproject
+  license metadata corrected from the bootstrap-era MIT to GPL-3.0-only.
+- `minions doctor` gained the tool-calling preflight probe
+  (providers/probe.py): one tiny completion proves the server+model combo
+  emits structured tool calls — FAILs fast on combos like Devstral that
+  previously burned 18 minutes. Verified live (gpt-oss and GLM both pass).
+
 ## 2026-07-10 — GRU integration, model verdict, DX
 
 - **`minions init`** added (ADR-007): appends a sentinel-marked instruction
