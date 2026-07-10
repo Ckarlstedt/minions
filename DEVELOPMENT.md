@@ -79,11 +79,19 @@ uv tool install git+https://github.com/Ckarlstedt/minions@v0.1.0     # pinned re
 To cut a release:
 
 ```bash
-# 1. bump `version` in pyproject.toml, commit, push
-# 2. tag the release and move the 'latest' alias
+# 1. bump the package version FIRST — the tag alone does nothing:
+#    `uv tool list` and `minions --version` report pyproject.toml's version,
+#    not the git tag they were installed from.
+uv version --bump patch      # edits pyproject.toml (use minor/major as appropriate)
+uv lock
+git commit -am "bump version to X.Y.Z" && git push
+
+# 2. tag that commit and move the 'latest' alias.
+#    `git tag -f latest` is required: force-PUSH alone moves nothing —
+#    if the local tag still points at the old commit, git says "up to date".
 git tag vX.Y.Z
 git tag -f latest
-git push origin main vX.Y.Z
+git push origin vX.Y.Z
 git push -f origin latest
 ```
 
