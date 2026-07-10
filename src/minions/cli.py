@@ -11,12 +11,20 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import logging
+import os
 import sys
 import time
 from pathlib import Path
 
 from minions import __version__
-from minions.config import ConfigError, Settings, load_settings
+from minions.config import (
+    DEFAULT_CONFIG_PATH,
+    ConfigError,
+    Settings,
+    default_user_config_path,
+    load_settings,
+    read_config_file,
+)
 from minions.providers.base import ProviderError
 from minions.providers.openai_compat import OpenAICompatProvider
 from minions.providers.probe import probe_tool_calling
@@ -36,6 +44,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "init":
             return _init(args)
+        if args.command == "model":
+            return _model(args)
         settings = load_settings()
         if args.command == "investigate":
             return _investigate(args, settings)
@@ -82,6 +92,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="instructions file to manage (default: AGENTS.md)",
     )
     init.add_argument("-v", "--verbose", action="store_true")
+
+    model = subparsers.add_parser(
+        "model",
+        help="show or set the model (global config by default, --local for this repo)",
+    )
+    model.add_argument("name", nargs="?", default=None, help="model id to set; omit to show")
+    model.add_argument(
+        "--local",
+        action="store_true",
+        help="write to ./.env.toml instead of the global config",
+    )
+    model.add_argument("-v", "--verbose", action="store_true")
     return parser
 
 
@@ -106,6 +128,7 @@ def _investigate(args: argparse.Namespace, settings: Settings) -> int:
 
 
 def _init(args: argparse.Namespace) -> int:
+    from minions.config_edit import ensure_user_config
     from minions.integrate import DEFAULT_FILE, write_agent_instructions
 
     file_name = args.file or DEFAULT_FILE
@@ -120,6 +143,36 @@ def _init(args: argparse.Namespace) -> int:
     print(messages[outcome])
     if outcome in ("created", "added"):
         print("agents reading that file will now delegate investigations to minions")
+
+    config_path = default_user_config_path()
+    if ensure_user_config(config_path) == "created":
+        print(f"created {config_path} (commented defaults — edit or use `minions model`)")
+    else:
+        print(f"global config: {config_path}")
+    return 0
+
+
+def _model(args: argparse.Namespace) -> int:
+    from minions.config_edit import set_model
+
+    if args.name is None:
+        settings = load_settings()
+        if "MINIONS_MODEL" in os.environ:
+            source = "MINIONS_MODEL env var"
+        elif read_config_file(DEFAULT_CONFIG_PATH).get("provider", {}).get("model"):
+            source = str(DEFAULT_CONFIG_PATH.resolve())
+        elif read_config_file(default_user_config_path()).get("provider", {}).get("model"):
+            source = str(default_user_config_path())
+        else:
+            source = "built-in default"
+        print(f"model: {settings.model} (from {source})")
+        return 0
+
+    target = Path(DEFAULT_CONFIG_PATH) if args.local else default_user_config_path()
+    set_model(args.name, target)
+    scope = "this repo" if args.local else "global"
+    print(f'set provider.model = "{args.name}" in {target} ({scope})')
+    print("run `minions doctor` to verify the server offers it and tool calling works")
     return 0
 
 
@@ -137,8 +190,6 @@ def _doctor(args: argparse.Namespace, settings: Settings) -> int:
         sys.version_info >= (3, 12),
         f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
     )
-    from minions.config import DEFAULT_CONFIG_PATH, default_user_config_path
-
     def presence(path: Path) -> str:
         return f"{path} ({'found' if path.exists() else 'absent'})"
 

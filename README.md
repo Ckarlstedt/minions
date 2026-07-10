@@ -1,13 +1,14 @@
 # GRU & Minions
 
-Frontier reasoning agents (**GRU**) burn most of their expensive tokens on
-*investigation* — grepping, reading files, tracing git history — before any
-actual reasoning happens. **Minions** moves that investigation to a cheap
-local model, which explores the repository with read-only tools and returns a
+Frontier coding agents (**GRU** — Claude Code, Codex, Cursor, …) burn most of
+their expensive tokens on *investigation* — grepping, reading files, tracing
+git history — before any actual reasoning happens. **minions** is a CLI tool
+you add to your projects: it delegates that investigation to a cheap local
+model, which explores the repository with read-only tools and returns a
 compact report whose citations are **machine-verified** against the real
 files.
 
-GRU keeps doing what it is good at: reasoning, architecture, editing.
+Your agent keeps doing what it is good at: reasoning, architecture, editing.
 Minions do the legwork.
 
 ```
@@ -18,25 +19,45 @@ Minions do the legwork.
 └─────────┘                            └────────┘
 ```
 
-## Quickstart
+## Install
+
+Requires [uv](https://docs.astral.sh/uv/) and a local OpenAI-compatible model
+server (developed and tested against [omlx](https://omlx.app); vLLM, Ollama,
+LM Studio and friends should work but are unverified — PRs welcome):
 
 ```bash
-uv sync                            # set up the environment
-cp .env.example.toml .env.toml     # optional: configure server/model/budgets
+uv tool install git+https://github.com/Ckarlstedt/minions
 
-# check server, key, and environment
-uv run minions doctor
-
-# ask a question about any repository
-uv run minions investigate "Where is retry logic implemented, and is it tested?" --repo ~/code/myproject
+minions doctor    # verifies server, model, API key, and that tool calling works
 ```
 
-By default minions talks to a local OpenAI-compatible server at
-`http://127.0.0.1:8000/v1`. It is currently developed and tested against
-[omlx](https://omlx.app) (whose API key it can auto-discover); other
-OpenAI-compatible servers (vLLM, Ollama, LM Studio, …) should work but are
-unverified — PRs welcome. Configure via `.env.toml`
-(see [DEVELOPMENT.md](DEVELOPMENT.md)).
+## Add it to a project
+
+```bash
+cd ~/code/your-project
+minions init      # AGENTS.md by default; --file CLAUDE.md if that's your convention
+```
+
+`minions init` does two things:
+
+- **Appends** a short, clearly-marked instruction block to the repo's
+  `AGENTS.md` (creating the file if needed) telling coding agents when to
+  delegate investigation, how to call the CLI, and how to read verified
+  citations. It never touches anything outside its
+  `<!-- minions:begin/end -->` markers — re-running refreshes the block in
+  place and your own content is preserved. This block is the only thing
+  minions ever writes inside a repository; investigations themselves are
+  read-only by construction.
+- **Creates the global config** (`~/.config/minions/config.toml`) as a fully
+  commented template if it doesn't exist yet.
+
+From then on, any agent working in that repo reads the instructions and runs
+`minions investigate "…"` instead of burning its context on grep-and-read
+loops. You can also use it directly:
+
+```bash
+minions investigate "Where is retry logic implemented, and is it tested?"
+```
 
 ## What a report looks like
 
@@ -61,8 +82,9 @@ and downgrade the finding's confidence.
 
 You don't — you trust the engineering around it:
 
-- **Read-only by construction**: the tool registry contains no write-capable
-  operation and no shell. Path containment is enforced on every access.
+- **Read-only by construction**: the minion's tool registry contains no
+  write-capable operation and no shell. Path containment is enforced on every
+  access.
 - **Verified citations**: every claim cites file, line range, and a verbatim
   excerpt; excerpts are checked against the actual files after the run.
 - **Full audit trail**: each run writes a JSONL trace of every model response
@@ -70,68 +92,30 @@ You don't — you trust the engineering around it:
 - **Honest gaps**: the report schema has an `unanswered` section; the minion
   is instructed (and budgeted) to admit what it couldn't confirm.
 
-## Use it from your other projects
-
-minions is a normal CLI — install it once, then wire it into any repository
-where a coding agent (Claude Code, Codex, Cursor, …) does work for you.
-
-**1. Install the CLI on your PATH** (requires [uv](https://docs.astral.sh/uv/)
-and a running local model server):
-
-```bash
-# straight from git
-uv tool install git+https://github.com/Ckarlstedt/minions
-# or from a local clone
-uv tool install /path/to/minions
-```
-
-**2. Check the plumbing:**
-
-```bash
-minions doctor
-```
-
-**3. Teach the target repo's agents about it:**
-
-```bash
-cd ~/code/your-project
-minions init          # AGENTS.md by default; use --file CLAUDE.md if that's your convention
-```
-
-`minions init` **appends** a short, clearly-marked instruction block to the
-repo's `AGENTS.md` (creating it if needed) telling agents when to delegate
-investigation, how to call the CLI, and how to read verified citations. It
-never touches anything outside its `<!-- minions:begin/end -->` markers:
-re-running refreshes the block in place, and your own content is preserved.
-That block is the only thing in this project that ever writes inside a
-repository — investigations themselves are read-only by construction.
-
-From then on, any agent working in that repo reads the instructions and runs
-`minions investigate "…"` instead of burning its own context on grep-and-read
-loops.
-
 ## Configuration
 
 Zero configuration is the intended default: a standard local omlx setup
-(server on `127.0.0.1:8000`, gpt-oss-20b, key auto-discovered) works out of
-the box. When you want different settings, three layers apply — highest
-precedence first:
+(server on `127.0.0.1:8000`, gpt-oss-20b, API key auto-discovered from omlx's
+own settings) works out of the box. When you want different settings, three
+layers apply — highest precedence first:
 
 1. **`MINIONS_*` environment variables** — one-off overrides:
    `MINIONS_MODEL=other-model minions investigate "…"`
 2. **`.env.toml` in the working directory** — per-repo overrides (gitignore it)
-3. **`~/.config/minions/config.toml`** — machine-wide preferences for the
-   installed CLI (respects `XDG_CONFIG_HOME`)
+3. **`~/.config/minions/config.toml`** — machine-wide preferences, created by
+   `minions init` as a commented template (respects `XDG_CONFIG_HOME`)
 
-Both files use the same schema (see [.env.example.toml](.env.example.toml)
-for a commented template — copy it to either location). Layers merge per
-key: a repo `.env.toml` that only changes `budgets.max_steps` still inherits
-the model from your global config. `minions doctor` prints which files were
-found and which key source won.
+Both files use the same schema, and layers merge per key: a repo `.env.toml`
+that only changes `budgets.max_steps` still inherits the model from your
+global config. `minions doctor` shows which files were found and which source
+each value came from.
+
+Switching models is common enough to have its own command:
 
 ```bash
-mkdir -p ~/.config/minions
-cp .env.example.toml ~/.config/minions/config.toml   # then edit
+minions model                       # show the effective model and where it came from
+minions model GLM-4.7-Flash-6bit    # set it in the global config
+minions model gpt-oss-20b --local   # set it in this repo's .env.toml only
 ```
 
 All keys, with their env-var equivalents:
@@ -150,12 +134,9 @@ All keys, with their env-var equivalents:
 | `sampling.temperature` | `MINIONS_TEMPERATURE` | `0.2` | sampling temperature |
 | `trace.state_dir` | `MINIONS_STATE_DIR` | `~/.local/state/minions` | run traces (never inside the investigated repo) |
 
-**Never commit an API key** — `.env.toml` belongs in `.gitignore`, and the
-omlx auto-discovery exists precisely so no key needs to be written down.
-
 ## Documentation
 
 - [AGENTS.md](AGENTS.md) — how a frontier agent should delegate to minions
 - [ARCHITECTURE.md](ARCHITECTURE.md) — design, components, decision summaries
-- [DEVELOPMENT.md](DEVELOPMENT.md) — setup, configuration, testing
+- [DEVELOPMENT.md](DEVELOPMENT.md) — hacking on minions itself (setup, tests, lint)
 - [.agents/](.agents/) — engineering memory: plans, ADRs, findings, open questions

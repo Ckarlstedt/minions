@@ -2,6 +2,20 @@
 
 Newest first. One entry per meaningful step; keep entries short and factual.
 
+## 2026-07-10 — Tool framing, `minions model`, init creates global config
+
+- README rewritten tool-first: install → `minions init` in your project →
+  investigate. Development framing moved entirely to DEVELOPMENT.md; the
+  "never commit an API key" paragraph dropped per review.
+- `minions model [NAME] [--local]` added: shows the effective model and its
+  source, or sets `provider.model` in the global config (default) / repo
+  `.env.toml` (--local). Edits are surgical (comments preserved, result
+  re-parsed and verified before writing) via config_edit.py.
+- `minions init` now also creates `~/.config/minions/config.toml` as a fully
+  commented template when absent — no more "copy the example file" step. The
+  template is embedded in the package; a drift-guard test keeps
+  `.env.example.toml` identical to it. 127 tests green.
+
 ## 2026-07-10 — Global config layer
 
 - Added `~/.config/minions/config.toml` (XDG-aware): machine-wide preferences
