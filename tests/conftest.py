@@ -7,6 +7,12 @@ import pytest
 
 from minions.tools.workspace import Workspace
 
+
+@pytest.fixture(autouse=True)
+def isolated_user_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep tests from reading the developer's real ~/.config/minions/config.toml."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
+
 APP_PY_V1 = '''\
 import json
 from pathlib import Path

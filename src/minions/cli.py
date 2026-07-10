@@ -137,6 +137,13 @@ def _doctor(args: argparse.Namespace, settings: Settings) -> int:
         sys.version_info >= (3, 12),
         f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
     )
+    from minions.config import DEFAULT_CONFIG_PATH, default_user_config_path
+
+    def presence(path: Path) -> str:
+        return f"{path} ({'found' if path.exists() else 'absent'})"
+
+    print(f"[info] config: {presence(DEFAULT_CONFIG_PATH.resolve())}")
+    print(f"[info] config: {presence(default_user_config_path())}")
     print(f"[info] server: {settings.base_url}")
     print(f"[info] model: {settings.model}")
     check(

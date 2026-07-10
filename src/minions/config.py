@@ -3,9 +3,14 @@
 Sources, in precedence order:
 
 1. ``MINIONS_*`` process environment variables (one-off overrides, CI)
-2. ``.env.toml`` in the current working directory (gitignored; copy
-   ``.env.example.toml`` to create one)
-3. built-in defaults (targeting a local OpenAI-compatible server)
+2. ``.env.toml`` in the current working directory (per-repo overrides,
+   gitignored; copy ``.env.example.toml`` to create one)
+3. ``~/.config/minions/config.toml`` (machine-wide preferences for the
+   installed CLI; respects ``XDG_CONFIG_HOME``; same schema as .env.toml)
+4. built-in defaults (targeting a local OpenAI-compatible server)
+
+File layers merge per key, not per file: a repo ``.env.toml`` that only sets
+``budgets.max_steps`` still inherits the model configured globally.
 
 TOML was chosen for the config file because values arrive typed (ints stay
 ints), comments are first-class, and ``tomllib`` is stdlib — no dependency.
@@ -39,6 +44,13 @@ OMLX_SETTINGS_PATH = Path.home() / ".omlx" / "settings.json"
 
 class ConfigError(Exception):
     """Raised when configuration values cannot be read or parsed."""
+
+
+def default_user_config_path() -> Path:
+    """Machine-wide config for the installed CLI: ~/.config/minions/config.toml."""
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    base = Path(xdg) if xdg else Path.home() / ".config"
+    return base / "minions" / "config.toml"
 
 
 def default_state_dir() -> Path:
@@ -122,7 +134,7 @@ def _as_float(value: object, origin: str) -> float:
 def _table(config: dict, name: str) -> dict:
     value = config.get(name, {})
     if not isinstance(value, dict):
-        raise ConfigError(f"[{name}] in .env.toml must be a table")
+        raise ConfigError(f"[{name}] in a minions config file must be a table")
     return value
 
 
@@ -130,22 +142,30 @@ def load_settings(
     env: Mapping[str, str] | None = None,
     *,
     config_path: Path | None = DEFAULT_CONFIG_PATH,
+    user_config_path: Path | None = None,
     omlx_settings_path: Path | None = None,
 ) -> Settings:
     env = os.environ if env is None else env
-    config = read_config_file(config_path) if config_path else {}
-    provider = _table(config, "provider")
-    omlx = _table(provider, "omlx")
-    budgets = _table(config, "budgets")
-    sampling = _table(config, "sampling")
-    trace = _table(config, "trace")
+    if user_config_path is None:
+        user_config_path = default_user_config_path()
+    local = read_config_file(config_path) if config_path else {}
+    user = read_config_file(user_config_path)
+
+    def merged(name: str) -> dict:
+        return {**_table(user, name), **_table(local, name)}
+
+    provider = merged("provider")
+    omlx = {**_table(_table(user, "provider"), "omlx"), **_table(_table(local, "provider"), "omlx")}
+    budgets = merged("budgets")
+    sampling = merged("sampling")
+    trace = merged("trace")
     defaults = Settings()
 
     def pick[T](env_key: str, table: dict, file_key: str, fallback: T, cast: Callable[..., T]) -> T:
         if env_key in env:
             return cast(env[env_key], f"{env_key} env var")
         if file_key in table:
-            return cast(table[file_key], f"{file_key} in .env.toml")
+            return cast(table[file_key], f"{file_key} in config file")
         return fallback
 
     if omlx_settings_path is None:
@@ -157,8 +177,12 @@ def load_settings(
         api_key = env["MINIONS_API_KEY"]
         api_key_source = "MINIONS_API_KEY env"
     elif "api_key" in provider:
-        api_key = _as_str(provider["api_key"], "api_key in .env.toml")
-        api_key_source = ".env.toml provider.api_key"
+        api_key = _as_str(provider["api_key"], "provider.api_key in config file")
+        in_local = "api_key" in _table(local, "provider")
+        api_key_source = (
+            f"{config_path} provider.api_key" if in_local
+            else f"{user_config_path} provider.api_key"
+        )
     else:
         api_key = discover_omlx_api_key(omlx_settings_path)
         api_key_source = f"omlx settings ({omlx_settings_path})" if api_key else "none"

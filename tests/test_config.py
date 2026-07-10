@@ -74,7 +74,7 @@ def test_config_file_values(tmp_path: Path) -> None:
     assert settings.base_url == "http://filehost:1234/v1"
     assert settings.model == "file-model"
     assert settings.api_key == "sk-file"
-    assert settings.api_key_source == ".env.toml provider.api_key"
+    assert settings.api_key_source.endswith(".env.toml provider.api_key")
     assert settings.request_timeout == 60.0
     assert settings.max_steps == 4
     assert settings.temperature == 0.9
@@ -108,6 +108,63 @@ def test_wrong_type_in_config_file_raises(tmp_path: Path) -> None:
     config.write_text('[budgets]\nmax_steps = "lots"\n', encoding="utf-8")
     with pytest.raises(ConfigError, match="max_steps"):
         load_settings({}, config_path=config, omlx_settings_path=NO_OMLX)
+
+
+def test_user_config_used_when_no_local(tmp_path: Path) -> None:
+    user = tmp_path / "config.toml"
+    user.write_text('[provider]\nmodel = "global-model"\n', encoding="utf-8")
+    settings = load_settings(
+        {}, config_path=NO_CONFIG, user_config_path=user, omlx_settings_path=NO_OMLX
+    )
+    assert settings.model == "global-model"
+
+
+def test_local_beats_user_per_key_not_per_file(tmp_path: Path) -> None:
+    user = tmp_path / "config.toml"
+    user.write_text(
+        '[provider]\nmodel = "global-model"\napi_key = "sk-global"\n'
+        "[budgets]\nmax_steps = 9\n",
+        encoding="utf-8",
+    )
+    local = tmp_path / ".env.toml"
+    local.write_text('[provider]\nmodel = "repo-model"\n', encoding="utf-8")
+    settings = load_settings(
+        {}, config_path=local, user_config_path=user, omlx_settings_path=NO_OMLX
+    )
+    assert settings.model == "repo-model"  # local wins the contested key
+    assert settings.api_key == "sk-global"  # sibling key inherited from global
+    assert "config.toml provider.api_key" in settings.api_key_source
+    assert settings.max_steps == 9  # whole table inherited from global
+
+
+def test_env_beats_both_files(tmp_path: Path) -> None:
+    user = tmp_path / "config.toml"
+    user.write_text('[provider]\nmodel = "global-model"\n', encoding="utf-8")
+    local = tmp_path / ".env.toml"
+    local.write_text('[provider]\nmodel = "repo-model"\n', encoding="utf-8")
+    settings = load_settings(
+        {"MINIONS_MODEL": "env-model"},
+        config_path=local,
+        user_config_path=user,
+        omlx_settings_path=NO_OMLX,
+    )
+    assert settings.model == "env-model"
+
+
+def test_default_user_config_path_respects_xdg(monkeypatch, tmp_path: Path) -> None:
+    from minions.config import default_user_config_path
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    assert default_user_config_path() == tmp_path / "xdg" / "minions" / "config.toml"
+
+
+def test_omlx_subtable_merges_across_files(tmp_path: Path) -> None:
+    omlx = tmp_path / "custom-omlx.json"
+    omlx.write_text(json.dumps({"auth": {"api_key": "sk-global-omlx"}}), encoding="utf-8")
+    user = tmp_path / "config.toml"
+    user.write_text(f'[provider.omlx]\nsettings_path = "{omlx}"\n', encoding="utf-8")
+    settings = load_settings({}, config_path=NO_CONFIG, user_config_path=user)
+    assert settings.api_key == "sk-global-omlx"
 
 
 def test_omlx_key_discovery(tmp_path: Path) -> None:

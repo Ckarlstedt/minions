@@ -23,10 +23,12 @@ uv run minions investigate "…" # run a real investigation
 
 ## Configuration
 
-Copy `.env.example.toml` to `.env.toml` (gitignored) and adjust — every key
-is documented there, alongside its `MINIONS_*` environment-variable override.
-Precedence: **process env > `.env.toml` > defaults**. The file is read from
-the current working directory.
+Copy `.env.example.toml` to `.env.toml` (per-repo, gitignored) or to
+`~/.config/minions/config.toml` (machine-wide) — every key is documented
+there, alongside its `MINIONS_*` environment-variable override. Precedence:
+**process env > `./.env.toml` > `~/.config/minions/config.toml` > defaults**,
+with file layers merging per key. The full key table lives in the README's
+Configuration section.
 
 ```toml
 [provider]

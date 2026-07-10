@@ -2,6 +2,17 @@
 
 Newest first. One entry per meaningful step; keep entries short and factual.
 
+## 2026-07-10 — Global config layer
+
+- Added `~/.config/minions/config.toml` (XDG-aware): machine-wide preferences
+  for the installed CLI. Precedence: env > `./.env.toml` > user config >
+  defaults, with file layers merging per key (a repo file setting only
+  `budgets.max_steps` still inherits the globally-configured model).
+- `minions doctor` prints both config paths (found/absent) and the api-key
+  source now names the exact file. README gained a Configuration section
+  with the full key/env-var/default table; tests isolate XDG so they never
+  read a developer's real user config. 116 tests green.
+
 ## 2026-07-10 — Published
 
 - Repo published: https://github.com/Ckarlstedt/minions (public, GPL-3.0).

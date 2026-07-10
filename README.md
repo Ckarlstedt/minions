@@ -110,6 +110,49 @@ From then on, any agent working in that repo reads the instructions and runs
 `minions investigate "…"` instead of burning its own context on grep-and-read
 loops.
 
+## Configuration
+
+Zero configuration is the intended default: a standard local omlx setup
+(server on `127.0.0.1:8000`, gpt-oss-20b, key auto-discovered) works out of
+the box. When you want different settings, three layers apply — highest
+precedence first:
+
+1. **`MINIONS_*` environment variables** — one-off overrides:
+   `MINIONS_MODEL=other-model minions investigate "…"`
+2. **`.env.toml` in the working directory** — per-repo overrides (gitignore it)
+3. **`~/.config/minions/config.toml`** — machine-wide preferences for the
+   installed CLI (respects `XDG_CONFIG_HOME`)
+
+Both files use the same schema (see [.env.example.toml](.env.example.toml)
+for a commented template — copy it to either location). Layers merge per
+key: a repo `.env.toml` that only changes `budgets.max_steps` still inherits
+the model from your global config. `minions doctor` prints which files were
+found and which key source won.
+
+```bash
+mkdir -p ~/.config/minions
+cp .env.example.toml ~/.config/minions/config.toml   # then edit
+```
+
+All keys, with their env-var equivalents:
+
+| Key | Env var | Default | Meaning |
+| --- | --- | --- | --- |
+| `provider.base_url` | `MINIONS_BASE_URL` | `http://127.0.0.1:8000/v1` | OpenAI-compatible endpoint |
+| `provider.model` | `MINIONS_MODEL` | `gpt-oss-20b-MXFP4-Q8` | model id as the server advertises it |
+| `provider.api_key` | `MINIONS_API_KEY` | auto-discovered | server API key, if required |
+| `provider.request_timeout` | `MINIONS_REQUEST_TIMEOUT` | `180.0` | seconds per model call |
+| `provider.omlx.settings_path` | `MINIONS_OMLX_SETTINGS_PATH` | `~/.omlx/settings.json` | omlx-only: where to auto-discover the key |
+| `budgets.max_steps` | `MINIONS_MAX_STEPS` | `16` | tool calls per investigation |
+| `budgets.context_token_limit` | `MINIONS_CONTEXT_TOKEN_LIMIT` | `24000` | force-finish before the server's context cap |
+| `budgets.max_tool_output_chars` | `MINIONS_MAX_TOOL_OUTPUT_CHARS` | `8000` | per-tool-result truncation |
+| `budgets.max_completion_tokens` | `MINIONS_MAX_COMPLETION_TOKENS` | `4096` | per-call cap (includes reasoning tokens) |
+| `sampling.temperature` | `MINIONS_TEMPERATURE` | `0.2` | sampling temperature |
+| `trace.state_dir` | `MINIONS_STATE_DIR` | `~/.local/state/minions` | run traces (never inside the investigated repo) |
+
+**Never commit an API key** — `.env.toml` belongs in `.gitignore`, and the
+omlx auto-discovery exists precisely so no key needs to be written down.
+
 ## Documentation
 
 - [AGENTS.md](AGENTS.md) — how a frontier agent should delegate to minions
