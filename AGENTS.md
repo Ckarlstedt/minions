@@ -6,7 +6,8 @@ and **developing** this repository.
 ## Using minions as GRU
 
 You are the expensive reasoner. Delegate investigation instead of reading the
-repository yourself:
+repository yourself. (In *other* repositories, `minions init` plants a compact
+version of these instructions into that repo's AGENTS.md — see ADR-007.)
 
 ```bash
 minions investigate "<one specific question>" --repo <path>       # markdown report

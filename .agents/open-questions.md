@@ -1,10 +1,11 @@
 # Open questions
 
-- **Add a tool-calling preflight probe to `minions doctor`** (and possibly to
-  `investigate` startup): one tiny completion with a dummy tool to verify the
-  server+model combination actually emits structured tool_calls. Motivated by
-  Devstral-24B burning 18 minutes before failing because its tool calling is
-  non-functional via omlx (findings/2026-07-10-model-comparison.md).
+- ~~Tool-calling preflight probe in `minions doctor`~~ — done 2026-07-10
+  (`providers/probe.py`; doctor now FAILs fast on server+model combinations
+  that cannot emit structured tool calls). Still open: should `investigate`
+  itself probe before spending budget on an unknown model? Leaning no — the
+  doctor check plus a fast loop failure is enough, and a per-run probe taxes
+  every good run to protect the rare bad one.
 
 - **Partial-match verification tier?** Run 4 produced a 99%-verbatim citation
   (docstring quoted with the closing `"""` pulled up from the next line) that

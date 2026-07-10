@@ -2,6 +2,26 @@
 
 Newest first. One entry per meaningful step; keep entries short and factual.
 
+## 2026-07-10 — GRU integration, model verdict, DX
+
+- **`minions init`** added (ADR-007): appends a sentinel-marked instruction
+  block to a target repo's AGENTS.md (idempotent, refresh-in-place, never
+  touches surrounding content). The only write path into any repo, by design.
+  README gained a "Use it from your other projects" section (uv tool install
+  → doctor → init).
+- **Model evaluation concluded** (findings/2026-07-10-model-comparison.md):
+  gpt-oss-20b stays the minion. LFM2.5-8B-A1B tested live: ~10s/step but
+  fabricates evidence after one tool call — rejected. Env stays pointed at
+  gpt-oss.
+- **Live progress output** added (`--progress`, auto-on for TTY): per-step
+  tool calls, results, nudges with elapsed time. ProgressTrace decorates the
+  JSONL trace writer.
+- **Salvage extended**: unparsed tool-call envelopes (Qwen `<tool_call>`
+  text, repeated blocks, string-encoded arguments) now recovered; report
+  channel grants no extra trust.
+- **ty** type checker added to the dev group and the standard gate;
+  109 tests + ruff + ty all green.
+
 ## 2026-07-10 — Packaging, configuration, portability
 
 - Switched to **uv** (`uv sync`, `uv.lock` committed, dev deps in a

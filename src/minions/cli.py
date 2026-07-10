@@ -12,12 +12,14 @@ import argparse
 import dataclasses
 import logging
 import sys
+import time
 from pathlib import Path
 
 from minions import __version__
 from minions.config import ConfigError, Settings, load_settings
 from minions.providers.base import ProviderError
 from minions.providers.openai_compat import OpenAICompatProvider
+from minions.providers.probe import probe_tool_calling
 from minions.service import InvestigationService
 from minions.tools.workspace import Workspace
 from minions.trace import ProgressTrace, TraceWriter
@@ -32,6 +34,8 @@ def main(argv: list[str] | None = None) -> int:
         stream=sys.stderr,
     )
     try:
+        if args.command == "init":
+            return _init(args)
         settings = load_settings()
         if args.command == "investigate":
             return _investigate(args, settings)
@@ -66,6 +70,18 @@ def _build_parser() -> argparse.ArgumentParser:
     doctor = subparsers.add_parser("doctor", help="check server, config and environment")
     doctor.add_argument("--repo", default=".", help="repository root to check (default: cwd)")
     doctor.add_argument("-v", "--verbose", action="store_true")
+
+    init = subparsers.add_parser(
+        "init",
+        help="add (or refresh) minions usage instructions for a repo's coding agents",
+    )
+    init.add_argument("--repo", default=".", help="repository root (default: cwd)")
+    init.add_argument(
+        "--file",
+        default=None,
+        help="instructions file to manage (default: AGENTS.md)",
+    )
+    init.add_argument("-v", "--verbose", action="store_true")
     return parser
 
 
@@ -87,6 +103,24 @@ def _investigate(args: argparse.Namespace, settings: Settings) -> int:
     if report.stats and report.stats.trace_path:
         print(f"trace: {report.stats.trace_path}", file=sys.stderr)
     return 0 if report.status in ("complete", "partial") else 2
+
+
+def _init(args: argparse.Namespace) -> int:
+    from minions.integrate import DEFAULT_FILE, write_agent_instructions
+
+    file_name = args.file or DEFAULT_FILE
+    outcome = write_agent_instructions(Path(args.repo), file_name)
+    target = Path(args.repo).resolve() / file_name
+    messages = {
+        "created": f"created {target} with minions instructions",
+        "added": f"appended minions instructions to {target}",
+        "updated": f"refreshed the minions instructions block in {target}",
+        "unchanged": f"{target} already up to date",
+    }
+    print(messages[outcome])
+    if outcome in ("created", "added"):
+        print("agents reading that file will now delegate investigations to minions")
+    return 0
 
 
 def _doctor(args: argparse.Namespace, settings: Settings) -> int:
@@ -124,6 +158,12 @@ def _doctor(args: argparse.Namespace, settings: Settings) -> int:
             settings.model if settings.model in models else f"not in {models}",
             critical=False,
         )
+        try:
+            started = time.monotonic()
+            ok, detail = probe_tool_calling(provider)
+            check("tool calling", ok, f"{detail} ({time.monotonic() - started:.1f}s)")
+        except ProviderError as exc:
+            check("tool calling", False, str(exc))
     except ProviderError as exc:
         check("server reachable", False, str(exc))
     finally:

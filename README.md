@@ -70,6 +70,46 @@ You don't — you trust the engineering around it:
 - **Honest gaps**: the report schema has an `unanswered` section; the minion
   is instructed (and budgeted) to admit what it couldn't confirm.
 
+## Use it from your other projects
+
+minions is a normal CLI — install it once, then wire it into any repository
+where a coding agent (Claude Code, Codex, Cursor, …) does work for you.
+
+**1. Install the CLI on your PATH** (requires [uv](https://docs.astral.sh/uv/)
+and a running local model server):
+
+```bash
+# from a local clone
+uv tool install /path/to/minions
+# or straight from git
+uv tool install git+https://github.com/OWNER/minions
+```
+
+**2. Check the plumbing:**
+
+```bash
+minions doctor
+```
+
+**3. Teach the target repo's agents about it:**
+
+```bash
+cd ~/code/your-project
+minions init          # AGENTS.md by default; use --file CLAUDE.md if that's your convention
+```
+
+`minions init` **appends** a short, clearly-marked instruction block to the
+repo's `AGENTS.md` (creating it if needed) telling agents when to delegate
+investigation, how to call the CLI, and how to read verified citations. It
+never touches anything outside its `<!-- minions:begin/end -->` markers:
+re-running refreshes the block in place, and your own content is preserved.
+That block is the only thing in this project that ever writes inside a
+repository — investigations themselves are read-only by construction.
+
+From then on, any agent working in that repo reads the instructions and runs
+`minions investigate "…"` instead of burning its own context on grep-and-read
+loops.
+
 ## Documentation
 
 - [AGENTS.md](AGENTS.md) — how a frontier agent should delegate to minions
