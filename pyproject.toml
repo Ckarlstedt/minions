@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "minions"
-version = "0.1.0"
+version = "0.1.1"
 description = "Trustworthy investigation minions: delegate repository investigation from frontier agents (GRU) to cheap local models, get compact evidence-verified reports back."
 readme = "README.md"
 requires-python = ">=3.12"
