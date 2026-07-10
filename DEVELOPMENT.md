@@ -6,8 +6,8 @@ Requires [uv](https://docs.astral.sh/uv/) and Python ≥ 3.12 (uv will fetch
 one if needed):
 
 ```bash
-uv sync                      # creates .venv, installs deps + dev group
-cp .env.example .env         # optional: local configuration
+uv sync                            # creates .venv, installs deps + dev group
+cp .env.example.toml .env.toml     # optional: local configuration
 ```
 
 ## Everyday commands
@@ -22,26 +22,35 @@ uv run minions investigate "…" # run a real investigation
 
 ## Configuration
 
-Configuration comes from environment variables, with a `.env` file in the
-working directory as fallback (process env wins). Copy `.env.example` to
-`.env` and adjust; defaults target a local omlx server:
+Copy `.env.example.toml` to `.env.toml` (gitignored) and adjust — every key
+is documented there, alongside its `MINIONS_*` environment-variable override.
+Precedence: **process env > `.env.toml` > defaults**. The file is read from
+the current working directory.
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `MINIONS_BASE_URL` | `http://127.0.0.1:8000/v1` | OpenAI-compatible endpoint |
-| `MINIONS_MODEL` | `gpt-oss-20b-MXFP4-Q8` | model id as the server advertises it |
-| `MINIONS_API_KEY` | auto-discovered | falls back to the omlx settings file's `auth.api_key` |
-| `MINIONS_OMLX_SETTINGS_PATH` | `~/.omlx/settings.json` | where to look for the omlx key |
-| `MINIONS_MAX_STEPS` | `16` | tool-call budget per investigation |
-| `MINIONS_CONTEXT_TOKEN_LIMIT` | `24000` | force-finish before the server's 32k context cap |
-| `MINIONS_MAX_TOOL_OUTPUT_CHARS` | `8000` | per-tool-result truncation |
-| `MINIONS_MAX_COMPLETION_TOKENS` | `4096` | per-call completion cap (includes gpt-oss thinking) |
-| `MINIONS_TEMPERATURE` | `0.2` | sampling temperature |
-| `MINIONS_REQUEST_TIMEOUT` | `180` | seconds per model call |
-| `MINIONS_STATE_DIR` | `~/.local/state/minions` | run traces live here, never in the repo |
+```toml
+[provider]
+base_url = "http://127.0.0.1:8000/v1"   # any OpenAI-compatible endpoint
+model = "gpt-oss-20b-MXFP4-Q8"          # id exactly as the server advertises it
+#api_key = ""                           # if the server requires one
 
-**Never commit the API key.** It is read at runtime from the environment or
-omlx's own settings file and is never logged.
+[provider.omlx]
+# omlx-only: fallback API-key discovery from omlx's own settings file
+#settings_path = "~/.omlx/settings.json"
+
+[budgets]
+#max_steps = 16
+```
+
+**Provider support:** the code speaks the generic OpenAI chat-completions
+protocol, but is currently developed and tested against **omlx** only. Other
+servers (vLLM, Ollama, LM Studio, llama.cpp) should work and PRs improving
+support for them are very welcome — see the `ChatProvider` protocol in
+`src/minions/providers/base.py` for the extension point. The
+`[provider.omlx]` block exists because omlx stores its API key in a settings
+file we can discover; other providers have no equivalent.
+
+**Never commit the API key.** It is read at runtime from the environment,
+`.env.toml`, or omlx's own settings file, and is never logged.
 
 ## Repo conventions
 

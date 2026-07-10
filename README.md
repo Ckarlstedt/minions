@@ -21,8 +21,8 @@ Minions do the legwork.
 ## Quickstart
 
 ```bash
-uv sync                     # set up the environment
-cp .env.example .env        # optional: configure server/model/budgets
+uv sync                            # set up the environment
+cp .env.example.toml .env.toml     # optional: configure server/model/budgets
 
 # check server, key, and environment
 uv run minions doctor
@@ -31,10 +31,12 @@ uv run minions doctor
 uv run minions investigate "Where is retry logic implemented, and is it tested?" --repo ~/code/myproject
 ```
 
-By default minions talks to a local OpenAI-compatible server (e.g.
-[omlx](https://omlx.app)) at `http://127.0.0.1:8000/v1` and auto-discovers
-the omlx API key if one is needed. Any OpenAI-compatible server and model
-work — configure via `.env` (see [DEVELOPMENT.md](DEVELOPMENT.md)).
+By default minions talks to a local OpenAI-compatible server at
+`http://127.0.0.1:8000/v1`. It is currently developed and tested against
+[omlx](https://omlx.app) (whose API key it can auto-discover); other
+OpenAI-compatible servers (vLLM, Ollama, LM Studio, …) should work but are
+unverified — PRs welcome. Configure via `.env.toml`
+(see [DEVELOPMENT.md](DEVELOPMENT.md)).
 
 ## What a report looks like
 

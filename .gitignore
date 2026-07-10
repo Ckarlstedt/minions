@@ -14,3 +14,4 @@ build/
 
 # local secrets / scratch (never commit keys)
 .env
+.env.toml

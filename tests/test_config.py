@@ -8,10 +8,11 @@ import pytest
 from minions.config import ConfigError, load_settings
 
 NO_OMLX = Path("/nonexistent/omlx-settings.json")
+NO_CONFIG = Path("/nonexistent/.env.toml")
 
 
 def test_defaults() -> None:
-    settings = load_settings({}, omlx_settings_path=NO_OMLX)
+    settings = load_settings({}, config_path=NO_CONFIG, omlx_settings_path=NO_OMLX)
     assert settings.base_url == "http://127.0.0.1:8000/v1"
     assert settings.model == "gpt-oss-20b-MXFP4-Q8"
     assert settings.api_key is None
@@ -29,6 +30,7 @@ def test_env_overrides() -> None:
             "MINIONS_TEMPERATURE": "0.7",
             "MINIONS_STATE_DIR": "/tmp/minions-test-state",
         },
+        config_path=NO_CONFIG,
         omlx_settings_path=NO_OMLX,
     )
     assert settings.base_url == "http://localhost:9999/v1"  # trailing slash stripped
@@ -40,66 +42,102 @@ def test_env_overrides() -> None:
     assert settings.state_dir == Path("/tmp/minions-test-state")
 
 
-def test_bad_int_raises() -> None:
+def test_bad_env_int_raises() -> None:
     with pytest.raises(ConfigError, match="MINIONS_MAX_STEPS"):
-        load_settings({"MINIONS_MAX_STEPS": "many"}, omlx_settings_path=NO_OMLX)
+        load_settings(
+            {"MINIONS_MAX_STEPS": "many"}, config_path=NO_CONFIG, omlx_settings_path=NO_OMLX
+        )
+
+
+def test_config_file_values(tmp_path: Path) -> None:
+    config = tmp_path / ".env.toml"
+    config.write_text(
+        """
+        [provider]
+        base_url = "http://filehost:1234/v1"
+        model = "file-model"
+        api_key = "sk-file"
+        request_timeout = 60.0
+
+        [budgets]
+        max_steps = 4
+
+        [sampling]
+        temperature = 0.9
+
+        [trace]
+        state_dir = "~/minions-traces"
+        """,
+        encoding="utf-8",
+    )
+    settings = load_settings({}, config_path=config, omlx_settings_path=NO_OMLX)
+    assert settings.base_url == "http://filehost:1234/v1"
+    assert settings.model == "file-model"
+    assert settings.api_key == "sk-file"
+    assert settings.api_key_source == ".env.toml provider.api_key"
+    assert settings.request_timeout == 60.0
+    assert settings.max_steps == 4
+    assert settings.temperature == 0.9
+    assert settings.state_dir == Path("~/minions-traces").expanduser()
+
+
+def test_env_beats_config_file(tmp_path: Path) -> None:
+    config = tmp_path / ".env.toml"
+    config.write_text('[provider]\nmodel = "from-file"\n\n[budgets]\nmax_steps = 3\n')
+    settings = load_settings(
+        {"MINIONS_MAX_STEPS": "7"}, config_path=config, omlx_settings_path=NO_OMLX
+    )
+    assert settings.model == "from-file"
+    assert settings.max_steps == 7  # process env wins
+
+
+def test_missing_config_file_is_fine() -> None:
+    settings = load_settings({}, config_path=NO_CONFIG, omlx_settings_path=NO_OMLX)
+    assert settings.model == "gpt-oss-20b-MXFP4-Q8"
+
+
+def test_malformed_config_file_raises(tmp_path: Path) -> None:
+    config = tmp_path / ".env.toml"
+    config.write_text("[provider\nmodel = ", encoding="utf-8")
+    with pytest.raises(ConfigError, match="Invalid TOML"):
+        load_settings({}, config_path=config, omlx_settings_path=NO_OMLX)
+
+
+def test_wrong_type_in_config_file_raises(tmp_path: Path) -> None:
+    config = tmp_path / ".env.toml"
+    config.write_text('[budgets]\nmax_steps = "lots"\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match="max_steps"):
+        load_settings({}, config_path=config, omlx_settings_path=NO_OMLX)
 
 
 def test_omlx_key_discovery(tmp_path: Path) -> None:
     omlx = tmp_path / "settings.json"
     omlx.write_text(json.dumps({"auth": {"api_key": "sk-from-omlx"}}), encoding="utf-8")
-    settings = load_settings({}, omlx_settings_path=omlx)
+    settings = load_settings({}, config_path=NO_CONFIG, omlx_settings_path=omlx)
     assert settings.api_key == "sk-from-omlx"
     assert "omlx settings" in settings.api_key_source
+
+
+def test_omlx_settings_path_via_config_file(tmp_path: Path) -> None:
+    omlx = tmp_path / "custom-omlx.json"
+    omlx.write_text(json.dumps({"auth": {"api_key": "sk-custom"}}), encoding="utf-8")
+    config = tmp_path / ".env.toml"
+    config.write_text(f'[provider.omlx]\nsettings_path = "{omlx}"\n', encoding="utf-8")
+    settings = load_settings({}, config_path=config)
+    assert settings.api_key == "sk-custom"
 
 
 def test_env_key_beats_omlx(tmp_path: Path) -> None:
     omlx = tmp_path / "settings.json"
     omlx.write_text(json.dumps({"auth": {"api_key": "sk-from-omlx"}}), encoding="utf-8")
-    settings = load_settings({"MINIONS_API_KEY": "sk-env"}, omlx_settings_path=omlx)
-    assert settings.api_key == "sk-env"
-
-
-def test_dotenv_parsing(tmp_path: Path) -> None:
-    from minions.config import read_dotenv
-
-    env_file = tmp_path / ".env"
-    env_file.write_text(
-        "# comment\n"
-        "MINIONS_MODEL=some-model\n"
-        'MINIONS_BASE_URL="http://x:1/v1"\n'
-        "MINIONS_TEMPERATURE='0.5'\n"
-        "\n"
-        "not a valid line\n",
-        encoding="utf-8",
+    settings = load_settings(
+        {"MINIONS_API_KEY": "sk-env"}, config_path=NO_CONFIG, omlx_settings_path=omlx
     )
-    assert read_dotenv(env_file) == {
-        "MINIONS_MODEL": "some-model",
-        "MINIONS_BASE_URL": "http://x:1/v1",
-        "MINIONS_TEMPERATURE": "0.5",
-    }
-    assert read_dotenv(tmp_path / "missing.env") == {}
-
-
-def test_dotenv_used_when_env_not_supplied(tmp_path: Path, monkeypatch) -> None:
-    env_file = tmp_path / ".env"
-    env_file.write_text("MINIONS_MODEL=from-dotenv\nMINIONS_MAX_STEPS=3\n", encoding="utf-8")
-    monkeypatch.delenv("MINIONS_MODEL", raising=False)
-    monkeypatch.setenv("MINIONS_MAX_STEPS", "7")  # process env must win
-    settings = load_settings(dotenv_path=env_file, omlx_settings_path=NO_OMLX)
-    assert settings.model == "from-dotenv"
-    assert settings.max_steps == 7
-
-
-def test_omlx_settings_path_via_env(tmp_path: Path) -> None:
-    omlx = tmp_path / "custom-omlx.json"
-    omlx.write_text(json.dumps({"auth": {"api_key": "sk-custom"}}), encoding="utf-8")
-    settings = load_settings({"MINIONS_OMLX_SETTINGS_PATH": str(omlx)})
-    assert settings.api_key == "sk-custom"
+    assert settings.api_key == "sk-env"
 
 
 def test_corrupt_omlx_settings_ignored(tmp_path: Path) -> None:
     omlx = tmp_path / "settings.json"
     omlx.write_text("{not json", encoding="utf-8")
-    settings = load_settings({}, omlx_settings_path=omlx)
+    settings = load_settings({}, config_path=NO_CONFIG, omlx_settings_path=omlx)
     assert settings.api_key is None
