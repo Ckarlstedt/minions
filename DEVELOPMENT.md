@@ -66,6 +66,31 @@ file we can discover; other providers have no equivalent.
 - Tests are offline by default; anything needing the live server gets
   `@pytest.mark.live`.
 
+## Releasing
+
+Installs come straight from git, in three flavors:
+
+```bash
+uv tool install git+https://github.com/Ckarlstedt/minions            # HEAD of main
+uv tool install git+https://github.com/Ckarlstedt/minions@latest     # moving 'latest' tag
+uv tool install git+https://github.com/Ckarlstedt/minions@v0.1.0     # pinned release
+```
+
+To cut a release:
+
+```bash
+# 1. bump `version` in pyproject.toml, commit, push
+# 2. tag the release and move the 'latest' alias
+git tag vX.Y.Z
+git tag -f latest
+git push origin main vX.Y.Z
+git push -f origin latest
+```
+
+`latest` is a deliberately *moving* tag (like GitHub Actions' `@v1`
+convention) — hence the force-push. Users on `@latest` pick up the new
+version with `uv tool upgrade minions`.
+
 ## Debugging an investigation
 
 Every run writes a JSONL trace (path printed on stderr, kept under
