@@ -1,5 +1,11 @@
 # Open questions
 
+- **Add a tool-calling preflight probe to `minions doctor`** (and possibly to
+  `investigate` startup): one tiny completion with a dummy tool to verify the
+  server+model combination actually emits structured tool_calls. Motivated by
+  Devstral-24B burning 18 minutes before failing because its tool calling is
+  non-functional via omlx (findings/2026-07-10-model-comparison.md).
+
 - **Partial-match verification tier?** Run 4 produced a 99%-verbatim citation
   (docstring quoted with the closing `"""` pulled up from the next line) that
   strict verification rightly rejected. If near-misses turn out to be common,

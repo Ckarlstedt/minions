@@ -11,8 +11,19 @@ Newest first. One entry per meaningful step; keep entries short and factual.
   non-default omlx locations. Dependency-free ~15-line parser in config.py.
 - Scrubbed host-specific setup details from docs and `.agents/` — the
   project must read as portable open source, not one person's machine.
-- New candidate model available on the local server: `GLM-4.7-Flash-6bit`
-  (and an 8bit variant) — evaluation pending/below.
+- Config file switched from `.env` to **`.env.toml`** (`.env.example.toml`
+  committed): typed values, comments, stdlib `tomllib`; omlx key discovery
+  now clearly scoped under `[provider.omlx]` since it is an omlx-only
+  convenience. README/DEVELOPMENT now state provider support honestly:
+  developed against omlx, other OpenAI-compatible servers unverified, PRs
+  welcome. 96 tests green.
+- `GLM-4.7-Flash-6bit` evaluation attempted (`MINIONS_MODEL=…`): blocked by
+  the omlx prefill memory guard — with gpt-oss still resident, loading GLM
+  predicts ~26.3 GB peak vs a ~26.1 GB cap. Not a code issue (the CLI
+  surfaced a clean provider error, exit 1). Needs gpt-oss unloaded in the
+  oMLX app or a looser memory-guard tier before the comparison can run.
+  When it runs, compare against the gpt-oss baseline: complete, 75%
+  verified, 17 steps, 107s, on the standard read-only-enforcement question.
 
 ## 2026-07-09 — Bootstrap session (continued)
 

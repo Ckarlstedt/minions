@@ -83,7 +83,7 @@ def test_invalid_submission_gets_retried(plain_ws: Workspace) -> None:
     outcome = run(provider, plain_ws)
     assert outcome.submission is not None
     errors = [
-        m.content
+        m.content or ""
         for request, _ in provider.requests
         for m in request
         if m.role == "tool" and (m.content or "").startswith("Error")
@@ -105,6 +105,26 @@ def test_report_as_plain_text_is_salvaged(plain_ws: Workspace) -> None:
     outcome = run(provider, plain_ws)
     assert outcome.submission is not None
     assert outcome.submission.summary.startswith("load_config")
+
+
+def test_unparsed_tool_call_envelope_is_salvaged(plain_ws: Workspace) -> None:
+    """Qwen-style: server fails to parse `<tool_call>` text, possibly repeated."""
+    block = (
+        "<tool_call>\n"
+        + json.dumps({"name": "submit_report", "arguments": VALID_REPORT_ARGS})
+        + "\n</tool_call>\n"
+    )
+    provider = FakeProvider([text_reply(block * 3)])
+    outcome = run(provider, plain_ws)
+    assert outcome.submission is not None
+    assert outcome.submission.summary.startswith("load_config")
+
+
+def test_envelope_with_string_arguments_is_salvaged(plain_ws: Workspace) -> None:
+    envelope = {"name": "submit_report", "arguments": json.dumps(VALID_REPORT_ARGS)}
+    provider = FakeProvider([text_reply(json.dumps(envelope))])
+    outcome = run(provider, plain_ws)
+    assert outcome.submission is not None
 
 
 def test_non_report_text_is_not_salvaged(plain_ws: Workspace) -> None:

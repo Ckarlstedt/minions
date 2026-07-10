@@ -161,22 +161,78 @@ def _parse_submission(call: ToolCall) -> tuple[ReportSubmission | None, str | No
 
 
 def _salvage_submission(content: str) -> ReportSubmission | None:
-    """Extract a valid report from plain text, e.g. a JSON block the model
-    should have sent as a submit_report call. Returns None if there isn't one."""
+    """Extract a valid report from plain text the model emitted instead of a
+    real submit_report call. Handles two observed shapes:
+
+    - the bare report JSON pasted into chat content (gpt-oss), and
+    - an unparsed tool-call envelope such as Qwen's
+      ``<tool_call>{"name": "submit_report", "arguments": {…}}`` — possibly
+      repeated — when the server's template parser fails to convert it.
+
+    Returns None when nothing validates; the channel grants no extra trust
+    (schema validation and citation verification still apply).
+    """
+    for candidate in _json_candidates(content):
+        raw: object = candidate
+        if candidate.get("name") == "submit_report":
+            raw = candidate.get("arguments")
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw)
+                except ValueError:
+                    continue
+        if not isinstance(raw, dict) or "summary" not in raw:
+            continue
+        try:
+            return FlatSubmission.model_validate(raw).to_submission()
+        except ValidationError:
+            continue
+    return None
+
+
+def _json_candidates(content: str) -> list[dict]:
+    """Dicts worth trying: the widest {...} span, then the first balanced object
+    (which survives concatenated/repeated blocks where the wide span is invalid)."""
+    candidates = []
     start = content.find("{")
     end = content.rfind("}")
     if start == -1 or end <= start:
-        return None
-    try:
-        raw = json.loads(content[start : end + 1])
-    except ValueError:
-        return None
-    if not isinstance(raw, dict) or "summary" not in raw:
-        return None
-    try:
-        return FlatSubmission.model_validate(raw).to_submission()
-    except ValidationError:
-        return None
+        return []
+    for text in (content[start : end + 1], _first_json_object(content, start)):
+        if not text:
+            continue
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            continue
+        if isinstance(parsed, dict) and parsed not in candidates:
+            candidates.append(parsed)
+    return candidates
+
+
+def _first_json_object(content: str, start: int) -> str | None:
+    """Substring of the first balanced JSON object starting at `start`."""
+    depth = 0
+    in_string = False
+    escaped = False
+    for i in range(start, len(content)):
+        char = content[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return content[start : i + 1]
+    return None
 
 
 def _run_tool(call: ToolCall, registry: ToolRegistry, *, forced: bool) -> str:

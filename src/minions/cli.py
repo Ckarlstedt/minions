@@ -20,6 +20,7 @@ from minions.providers.base import ProviderError
 from minions.providers.openai_compat import OpenAICompatProvider
 from minions.service import InvestigationService
 from minions.tools.workspace import Workspace
+from minions.trace import ProgressTrace, TraceWriter
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -54,6 +55,12 @@ def _build_parser() -> argparse.ArgumentParser:
     investigate.add_argument("--repo", default=".", help="repository root (default: cwd)")
     investigate.add_argument("--json", action="store_true", help="emit the full JSON report")
     investigate.add_argument("--max-steps", type=int, default=None, help="tool-call budget")
+    investigate.add_argument(
+        "--progress",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="live progress on stderr (default: on when stderr is a terminal)",
+    )
     investigate.add_argument("-v", "--verbose", action="store_true")
 
     doctor = subparsers.add_parser("doctor", help="check server, config and environment")
@@ -66,7 +73,12 @@ def _investigate(args: argparse.Namespace, settings: Settings) -> int:
     if args.max_steps is not None:
         settings = dataclasses.replace(settings, max_steps=args.max_steps)
     service = InvestigationService(settings)
-    report = service.investigate(args.question, repo=args.repo)
+
+    trace: TraceWriter = TraceWriter.create(settings.state_dir, args.question)
+    show_progress = args.progress if args.progress is not None else sys.stderr.isatty()
+    if show_progress:
+        trace = ProgressTrace(trace)
+    report = service.investigate(args.question, repo=args.repo, trace=trace)
 
     if args.json:
         print(report.model_dump_json(indent=2))

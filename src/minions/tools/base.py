@@ -68,9 +68,11 @@ class ToolRegistry:
 
 def require_int(value: object, name: str, *, minimum: int | None = None) -> int:
     """Coerce a model-supplied argument to int with a model-readable error."""
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        raise ToolError(f"{name} must be an integer, got {value!r}")
     try:
-        result = int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+        result = int(value)
+    except ValueError:
         raise ToolError(f"{name} must be an integer, got {value!r}") from None
     if minimum is not None and result < minimum:
         raise ToolError(f"{name} must be >= {minimum}, got {result}")

@@ -18,6 +18,9 @@ Exit codes: `0` report delivered (complete or partial), `2` investigation
 failed (read stderr, consider rephrasing or investigating yourself), `1`
 config/server problem (run `doctor`).
 
+Live progress prints to stderr only when stderr is a terminal, so captured
+agent output stays clean by default (`--progress` / `--no-progress` to force).
+
 **Ask well.** One semantic question per invocation, with success criteria in
 the question itself. Good: *"Where is pagination implemented in the API
 layer, and which tests cover it?"* Bad: *"Audit this repo"* (too broad),
@@ -44,9 +47,9 @@ launch independent questions as separate background invocations.
   ADRs, findings, open questions, progress log). Update it as you work:
   decisions get an ADR, discoveries go to `findings/`, progress to
   `progress.md`.
-- Verify before claiming: `uv run pytest` and `uv run ruff check src tests`
-  must pass; `uv run minions doctor` plus one live `investigate` run for
-  changes touching the loop, provider, or prompts.
+- Verify before claiming: `uv run pytest`, `uv run ruff check src tests`, and
+  `uv run ty check` must pass; `uv run minions doctor` plus one live
+  `investigate` run for changes touching the loop, provider, or prompts.
 - Invariants that must survive any change:
   - the tool layer stays read-only and shell-free (ADR-005);
   - reports stay schema-validated with verifiable citations (ADR-004);

@@ -14,10 +14,10 @@ STATS = RunStats(
 )
 
 
-def submission(**overrides) -> ReportSubmission:
-    base = {
-        "summary": "The config is loaded in src/app.py.",
-        "findings": [
+def submission(unanswered: list[str] | None = None) -> ReportSubmission:
+    return ReportSubmission(
+        summary="The config is loaded in src/app.py.",
+        findings=[
             Finding(
                 claim="load_config reads JSON",
                 confidence=Confidence.HIGH,
@@ -28,10 +28,8 @@ def submission(**overrides) -> ReportSubmission:
                 ],
             )
         ],
-        "unanswered": [],
-    }
-    base.update(overrides)
-    return ReportSubmission(**base)
+        unanswered=unanswered or [],
+    )
 
 
 def test_status_complete() -> None:

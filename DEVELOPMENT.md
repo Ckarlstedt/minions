@@ -16,6 +16,7 @@ cp .env.example.toml .env.toml     # optional: local configuration
 uv run pytest                  # test suite (offline; no server needed)
 uv run ruff check src tests    # lint
 uv run ruff format src tests   # format
+uv run ty check                # type check
 uv run minions doctor          # verify server/key/environment
 uv run minions investigate "…" # run a real investigation
 ```
